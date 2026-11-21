@@ -7,13 +7,13 @@ drive.mount("/content/drive")
 
 import os
 REPO = "/content/repo"
-URL = "https://github.com/<you>/<repo>.git"
+URL = "https://github.com/WillDeinzer/math_fine_tuning.git"
 
 if not os.path.exists(REPO):
     !git clone {URL} {REPO}
 %cd {REPO}
 !git pull
-!pip install -q -r requirements-colab.txt
+!pip install -q -r requirements_colab.txt
 !nvidia-smi
 !pip list 2>/dev/null | grep -i -E "^(torch|transformers|trl|peft|datasets|pandas|numpy|accelerate) "
 
