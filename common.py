@@ -24,12 +24,7 @@ class BaselineAndSummarizationTaskCallback(TrainerCallback):
     def on_evaluate(self, args, state, control, model, metrics=None, **kwargs):
         print(f"\n Running Summarization Task at Step {state.global_step} (Epoch {state.epoch})")
         model.eval()
-        result = self.evaluate_summarization_task(model, self.tokenizer, state.epoch)
-
-        if metrics is not None:
-            metrics["eval_summ_rougeL"] = result["rougeL"]
-            metrics["eval_summ_bert_F1"] = result["bert_F1"]
-
+        self.evaluate_summarization_task(model, self.tokenizer, state.epoch)
         model.train()
 
     def evaluate_summarization_task(self, model, tokenizer, epoch):

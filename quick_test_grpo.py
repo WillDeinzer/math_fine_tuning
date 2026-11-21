@@ -39,7 +39,7 @@ TEST_TRAINING = dict(
     num_generations=4, max_completion_length=256, temperature=1.0, beta=0.0, loss_type="dapo", epsilon=0.2,
     num_iterations=1, scale_rewards="group", reward_weights=[1.0, 0.1],
     use_vllm=True, vllm_mode="colocate", vllm_gpu_memory_utilization=0.3, log_completions=False,
-    save_strategy="no", eval_strategy="no", eval_on_start=False,
+    save_strategy="no", eval_strategy="no", eval_on_start=False, report_to="none",  # no wandb for smoke tests
 )
 
 results = []

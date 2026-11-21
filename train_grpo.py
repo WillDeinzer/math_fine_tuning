@@ -17,12 +17,14 @@ def parse_args():
     p = argparse.ArgumentParser()
     p.add_argument("--output_dir", default="./grpo_checkpoints")
     p.add_argument("--init_model", default=None, help="Path to an SFT checkpoint (LoRA adapter) to start from. Omit to start from the base model.")
+    p.add_argument("--run_name", default=None, help="wandb run name (default: grpo_base or grpo_from_sft)")
     args = p.parse_args()
 
     if args.init_model is not None and not os.path.isdir(args.init_model):
         p.error(f"--init_model {args.init_model} is not a directory")
 
     args.strategy = "grpo_from_sft" if args.init_model else "grpo_base"
+    args.run_name = args.run_name or args.strategy
     return args
 
 def get_model(init_model=None, training_config=GRPOTrainingConfig(), lora_config=GRPOLoraConfig()):
@@ -128,8 +130,9 @@ def format_reward(completions, **kwargs):
 REWARD_FUNCS = [correctness_reward, format_reward]
 
 def get_trainer(tokenizer, model, train_dataset, eval_dataset, output_dir="./grpo_checkpoints",
-                strategy="grpo_base", training_config=GRPOTrainingConfig()):
+                strategy="grpo_base", training_config=GRPOTrainingConfig(), run_name=None):
     kwargs = training_config.trainer_kwargs()
+    kwargs["run_name"] = run_name or strategy
 
     if kwargs["use_vllm"]:
         kwargs["generation_kwargs"] = {"stop": STOP_STRINGS}
@@ -153,7 +156,7 @@ def get_trainer(tokenizer, model, train_dataset, eval_dataset, output_dir="./grp
 
 def save_run_info(args):
     os.makedirs(args.output_dir, exist_ok=True)
-    info = {"base_model": MODEL_NAME, "init_model": args.init_model, "strategy": args.strategy}
+    info = {"base_model": MODEL_NAME, "init_model": args.init_model, "strategy": args.strategy, "run_name": args.run_name}
     with open(os.path.join(args.output_dir, "run_info.json"), "w") as f:
         json.dump(info, f, indent=2)
 
@@ -161,7 +164,8 @@ def main():
     args = parse_args()
     tokenizer, model = get_model(args.init_model)
     train_dataset, eval_dataset = load_and_process_datasets(tokenizer)
-    trainer = get_trainer(tokenizer, model, train_dataset, eval_dataset, args.output_dir, args.strategy)
+    trainer = get_trainer(tokenizer, model, train_dataset, eval_dataset, args.output_dir, args.strategy,
+                          run_name=args.run_name)
     save_run_info(args)
     trainer.train()
 

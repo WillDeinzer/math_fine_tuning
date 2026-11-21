@@ -1,5 +1,8 @@
+import os
 from typing import ClassVar, Optional
 from pydantic import BaseModel
+
+os.environ.setdefault("WANDB_PROJECT", "cs4650-math-finetuning")
 
 MODEL_NAME = "Qwen/Qwen2.5-1.5B"
 
@@ -57,7 +60,7 @@ class TrainingArgumentsConfig(BaseModel):
     eval_on_start: bool = True
     save_only_model: bool = True
     gradient_checkpointing_kwargs: dict = {"use_reentrant": False}
-    report_to: str = "none"
+    report_to: str = "wandb"
     seed: int = 42
 
     ALLOWED_NONE: ClassVar[tuple] = ()
@@ -81,6 +84,7 @@ class SFTTrainingConfig(TrainingArgumentsConfig):
     fp16: bool = True
     bf16: bool = False
     logging_steps: int = 25
+    run_name: str = "sft_lora_r64_v1"
 
     completion_only_loss: bool = True
     max_seq_length: int = 1024
