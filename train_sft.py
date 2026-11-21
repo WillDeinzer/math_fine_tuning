@@ -6,6 +6,9 @@ import pandas as pd
 import torch
 from datasets import Dataset
 import argparse
+import os
+
+os.environ.setdefault("WANDB_PROJECT", "cs4650-math-finetuning")
 
 MODEL_NAME = "Qwen/Qwen2.5-1.5B"
 LORA_DROPOUT = 0.1
@@ -20,12 +23,7 @@ class BaselineAndSummarizationTaskCallback(TrainerCallback):
     def on_evaluate(self, args, state, control, model, metrics=None, **kwargs):
         print(f"\n Running Summarization Task at Step {state.global_step} (Epoch {state.epoch})")
         model.eval()
-        result = self.evaluate_summarization_task(model, self.tokenizer, state.epoch)
-
-        if metrics is not None:
-            metrics["eval_summ_rougeL"] = result["rougeL"]
-            metrics["eval_summ_bert_F1"] = result["bert_F1"]
-
+        self.evaluate_summarization_task(model, self.tokenizer, state.epoch)
         model.train()
 
     def evaluate_summarization_task(self, model, tokenizer, epoch, fine_tuning_strategy="sft_only"):
@@ -104,7 +102,8 @@ def get_trainer(tokenizer, model, train_dataset, eval_dataset, output_dir="./sft
         train_sampling_strategy="group_by_length",
         packing=packing,
         lr_scheduler_type=lr_scheduler_type,
-        report_to="none",
+        report_to="wandb",
+        run_name="sft_lora_r64_v1",
         seed=42,
     )
 
