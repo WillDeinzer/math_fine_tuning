@@ -5,6 +5,7 @@ from summarization_eval import score_summarization_task
 import pandas as pd
 import torch
 from datasets import Dataset
+import argparse
 
 MODEL_NAME = "Qwen/Qwen2.5-1.5B"
 LORA_DROPOUT = 0.1
@@ -57,7 +58,7 @@ def get_model():
     model = get_peft_model(model, peft_config)
     return tokenizer, model
 
-def get_trainer(tokenizer, model, train_dataset, eval_dataset):
+def get_trainer(tokenizer, model, train_dataset, eval_dataset, output_dir="./sft_checkpoints"):
     num_train_epochs = 3
     optimizer = 'adamw_torch_fused'
     max_grad_norm = 1.0
@@ -75,7 +76,6 @@ def get_trainer(tokenizer, model, train_dataset, eval_dataset):
     save_strategy = 'epoch'
     eval_strategy='epoch'
     logging_steps = 25
-    output_dir = './sft_checkpoints'
     max_seq_length = 1024
     packing = False
 
@@ -83,6 +83,7 @@ def get_trainer(tokenizer, model, train_dataset, eval_dataset):
         output_dir=output_dir,
         num_train_epochs=num_train_epochs,
         eval_on_start=True,
+        save_only_model=True,
         completion_only_loss=True,
         per_device_train_batch_size=per_device_train_batch_size,
         per_device_eval_batch_size=per_device_eval_batch_size,
@@ -143,10 +144,16 @@ def load_and_process_datasets(tokenizer):
     })
     return train_dataset, eval_dataset
 
+def parse_args():
+    p = argparse.ArgumentParser()
+    p.add_argument("--output_dir", default="./sft_checkpoints")
+    return p.parse_args()
+
 def main():
+    args = parse_args()
     tokenizer, model = get_model()
     train_dataset, eval_dataset = load_and_process_datasets(tokenizer)
-    trainer = get_trainer(tokenizer, model, train_dataset, eval_dataset)
+    trainer = get_trainer(tokenizer, model, train_dataset, eval_dataset, args.output_dir)
     trainer.train()
 
 if __name__ == "__main__":
