@@ -18,9 +18,8 @@ from train_sft import (
     get_model,
     load_and_process_datasets,
     get_trainer,
-    build_prompt,
-    BaselineAndSummarizationTaskCallback,
 )
+from common import build_prompt, BaselineAndSummarizationTaskCallback
 
 
 def section(title):
