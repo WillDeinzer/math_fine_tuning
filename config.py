@@ -6,8 +6,14 @@ os.environ.setdefault("WANDB_PROJECT", "cs4650-math-finetuning")
 
 MODEL_NAME = "Qwen/Qwen2.5-1.5B"
 
+SEED = 42
+
 TRAIN_PATH = "datasets/train.jsonl"
 VAL_PATH = "datasets/val.jsonl"
+TEST_PATHS = {
+    "gsm8k": "datasets/gsm8k_test.jsonl",
+    "math500": "datasets/math_500.jsonl",
+}
 
 SFT_EPOCH_ADAPTER_DIR = "/content/drive/MyDrive/math_finetuning/epoch_adapters"
 
@@ -63,7 +69,7 @@ class TrainingArgumentsConfig(BaseModel):
     save_only_model: bool = True
     gradient_checkpointing_kwargs: dict = {"use_reentrant": False}
     report_to: str = "wandb"
-    seed: int = 42
+    seed: int = SEED
 
     ALLOWED_NONE: ClassVar[tuple] = ()
 

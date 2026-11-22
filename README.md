@@ -66,3 +66,17 @@ conda create -y -p <env_dir>/math_grpo python=3.12
 ```
 
 The torch builds in both target CUDA 13, so they need a GPU node with a CUDA 13 driver and bf16 support (for example A100, L40S, H100).
+
+## Math evaluation
+
+`eval_math.py` scores a model on GSM8K test and MATH-500 (greedy decoding, last `\boxed{}` answer checked with
+math-verify). Needs `math-verify` and `vllm` (or add `--backend hf`); on a T4 add `--dtype float16`.
+
+```
+!python eval_math.py --output_dir /content/drive/MyDrive/results/math/base_zero_shot
+!python eval_math.py --shots 4 --output_dir /content/drive/MyDrive/results/math/base_few_shot
+!python eval_math.py --checkpoint <run_dir>/checkpoint-N --output_dir /content/drive/MyDrive/results/math/<name>
+```
+
+Writes `generations_<dataset>.jsonl` (one row per problem) and `metrics.json` (accuracy, lenient accuracy,
+no-`\boxed{}` rate, truncation rate, and MATH-500 accuracy by level and subject). Use `--limit 20` for a quick check.
