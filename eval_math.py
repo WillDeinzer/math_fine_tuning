@@ -5,21 +5,22 @@ import re
 import shutil
 import tempfile
 import time
-from functools import lru_cache
 
 import pandas as pd
-from math_verify import parse, verify
+import torch
+from peft import PeftModel
+from transformers import AutoModelForCausalLM, AutoTokenizer
 
-from train_sft import MODEL_NAME, build_prompt
+try:
+    from vllm import LLM, SamplingParams
+except ImportError:  # vLLM is optional: --backend hf works without it
+    LLM = SamplingParams = None
 
-DATASETS = {
-    "gsm8k": "datasets/gsm8k_test.jsonl",
-    "math500": "datasets/math_500.jsonl",
-}
-FEW_SHOT_POOL = "datasets/train.jsonl"
+from common import build_prompt, STOP_STRINGS, cut_at_stop, extract_answer, answers_match
+from config import MODEL_NAME, SEED, TEST_PATHS as DATASETS, TRAIN_PATH as FEW_SHOT_POOL
+
 FEW_SHOT_SOURCE = {"gsm8k": "gsm8k", "math500": "math"}
 FEW_SHOT_MAX_CHARS = 600
-SEED = 42
 
 
 def pick_few_shot_examples(source, k):
@@ -36,59 +37,12 @@ def make_prompts(questions, shots_df=None):
     return [prefix + build_prompt(q) for q in questions]
 
 
-STOP_STRINGS = ["\nQuestion:"]
 NUMBER = re.compile(r"-?\d[\d,]*(?:\.\d+)?")
-
-
-def cut_at_stop(text):
-    for stop in STOP_STRINGS:
-        text = text.split(stop, 1)[0]
-    return text
-
-
-def last_boxed_content(text):
-    start = text.rfind("\\boxed")
-    if start == -1:
-        return None
-    i = start + len("\\boxed")
-    if text[i:i + 1] == "{":
-        depth = 0
-        for j in range(i, len(text)):
-            if text[j] == "{":
-                depth += 1
-            elif text[j] == "}":
-                depth -= 1
-                if depth == 0:
-                    return text[i + 1:j]
-        return None
-    bare = re.match(r"\s+([^\s$]+)", text[i:])
-    return bare.group(1) if bare else None
-
-
-def extract_answer(output):
-    answer = last_boxed_content(cut_at_stop(output))
-    if answer is None or answer.strip() == "":
-        return None
-    return answer.strip()
-
-
-@lru_cache(maxsize=None)
-def parse_gold(answer):
-    return parse(f"${answer}$")
 
 
 def last_number(text):
     matches = NUMBER.findall(cut_at_stop(text))
     return matches[-1].replace(",", "") if matches else None
-
-
-def answers_match(pred, gold):
-    if pred is None:
-        return False
-    try:
-        return bool(verify(parse_gold(gold), parse(f"${pred}$")))
-    except Exception:
-        return False
 
 
 def grade(output, gold):
@@ -112,10 +66,6 @@ def find_init_model(checkpoint):
 
 
 def build_merged_model(checkpoint, init_model, dtype_name):
-    import torch
-    from peft import PeftModel
-    from transformers import AutoModelForCausalLM, AutoTokenizer
-
     for adapter in filter(None, (init_model, checkpoint)):
         if not os.path.exists(os.path.join(adapter, "adapter_config.json")):
             raise ValueError(f"{adapter} has no adapter_config.json; point at a checkpoint-N folder")
@@ -134,12 +84,12 @@ def build_merged_model(checkpoint, init_model, dtype_name):
 
 class VLLMGenerator:
     def __init__(self, model_path, dtype_name, max_model_len, gpu_memory_utilization):
-        from vllm import LLM
+        if LLM is None:
+            raise ImportError("vllm is not installed; install it or use --backend hf")
         self.llm = LLM(model=model_path, dtype=dtype_name, max_model_len=max_model_len,
                        gpu_memory_utilization=gpu_memory_utilization, seed=SEED)
 
     def generate(self, prompts, max_new_tokens):
-        from vllm import SamplingParams
         params = SamplingParams(temperature=0.0, max_tokens=max_new_tokens, stop=STOP_STRINGS)
         outputs = self.llm.generate(prompts, params)
         return [(o.outputs[0].text, o.outputs[0].finish_reason == "length") for o in outputs]
@@ -147,9 +97,6 @@ class VLLMGenerator:
 
 class HFGenerator:
     def __init__(self, model_path, dtype_name, batch_size):
-        import torch
-        from transformers import AutoModelForCausalLM, AutoTokenizer
-        self.torch = torch
         self.tok = AutoTokenizer.from_pretrained(model_path)
         if self.tok.pad_token is None:
             self.tok.pad_token = self.tok.eos_token
@@ -162,7 +109,7 @@ class HFGenerator:
         results = []
         for i in range(0, len(prompts), self.batch_size):
             enc = self.tok(prompts[i:i + self.batch_size], return_tensors="pt", padding=True).to(self.model.device)
-            with self.torch.no_grad():
+            with torch.no_grad():
                 out = self.model.generate(**enc, max_new_tokens=max_new_tokens, do_sample=False,
                                           stop_strings=STOP_STRINGS, tokenizer=self.tok,
                                           pad_token_id=self.tok.pad_token_id)

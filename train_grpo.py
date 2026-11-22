@@ -1,16 +1,14 @@
 from transformers import AutoModelForCausalLM, AutoTokenizer
 from peft import LoraConfig, PeftModel, get_peft_model
 from trl import GRPOConfig, GRPOTrainer
-from math_verify import parse, verify
 import pandas as pd
 import torch
 from datasets import Dataset
 import argparse
 import os
 import json
-import re
-from functools import lru_cache
-from common import build_prompt, drop_empty_answers, keep_short, BaselineAndSummarizationTaskCallback
+from common import (build_prompt, drop_empty_answers, keep_short, BaselineAndSummarizationTaskCallback,
+                    STOP_STRINGS, extract_answer, is_correct)
 from config import MODEL_NAME, TRAIN_PATH, VAL_PATH, GRPOLoraConfig, GRPOTrainingConfig
 
 def parse_args():
@@ -73,49 +71,6 @@ def load_and_process_datasets(tokenizer):
     print("ANSWER:", example["answer"], "| SOURCE:", example["source"])
     print("=== END SAMPLE ===")
     return train_dataset, eval_dataset
-
-STOP_STRINGS = ["\nQuestion:"]
-
-def last_boxed_content(text):
-    start = text.rfind("\\boxed")
-    if start == -1:
-        return None
-    i = start + len("\\boxed")
-
-    if text[i:i + 1] == "{":
-        depth = 0
-        for j in range(i, len(text)):
-            if text[j] == "{":
-                depth += 1
-            elif text[j] == "}":
-                depth -= 1
-                if depth == 0:
-                    return text[i + 1:j]
-        return None
-
-    bare = re.match(r"\s+([^\s$]+)", text[i:])
-    return bare.group(1) if bare else None
-
-def extract_answer(completion):
-    for stop in STOP_STRINGS:
-        completion = completion.split(stop, 1)[0]
-    answer = last_boxed_content(completion)
-    if answer is None or answer.strip() == "":
-        return None
-    return answer.strip()
-
-@lru_cache(maxsize=None)
-def parse_gold(answer):
-    return parse(f"${answer}$")
-
-def is_correct(completion, answer):
-    pred = extract_answer(completion)
-    if pred is None:
-        return False
-    try:
-        return verify(parse_gold(answer), parse(f"${pred}$"))
-    except Exception:
-        return False
 
 def correctness_reward(completions, answer, source, log_metric=None, **kwargs):
     correct = [is_correct(c, a) for c, a in zip(completions, answer)]

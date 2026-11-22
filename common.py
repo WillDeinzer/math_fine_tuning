@@ -1,10 +1,63 @@
 import os
+import re
+from functools import lru_cache
 import wandb
 from transformers import TrainerCallback
 from summarization_eval import score_summarization_task
 
 def build_prompt(question):
     return f"Question: {question}\nSolution:"
+
+# If the model starts writing a new question, everything after that is not part of its answer
+STOP_STRINGS = ["\nQuestion:"]
+
+def cut_at_stop(text):
+    for stop in STOP_STRINGS:
+        text = text.split(stop, 1)[0]
+    return text
+
+def last_boxed_content(text):
+    start = text.rfind("\\boxed")
+    if start == -1:
+        return None
+    i = start + len("\\boxed")
+
+    if text[i:i + 1] == "{":
+        depth = 0
+        for j in range(i, len(text)):
+            if text[j] == "{":
+                depth += 1
+            elif text[j] == "}":
+                depth -= 1
+                if depth == 0:
+                    return text[i + 1:j]
+        return None
+
+    bare = re.match(r"\s+([^\s$]+)", text[i:])
+    return bare.group(1) if bare else None
+
+def extract_answer(completion):
+    answer = last_boxed_content(cut_at_stop(completion))
+    if answer is None or answer.strip() == "":
+        return None
+    return answer.strip()
+
+@lru_cache(maxsize=None)
+def parse_gold(answer):
+    from math_verify import parse
+    return parse(f"${answer}$")
+
+def answers_match(pred, gold):
+    if pred is None:
+        return False
+    from math_verify import parse, verify
+    try:
+        return bool(verify(parse_gold(gold), parse(f"${pred}$")))
+    except Exception:
+        return False
+
+def is_correct(completion, gold):
+    return answers_match(extract_answer(completion), gold)
 
 def drop_empty_answers(df):
     keep = ~df["answer"].str.strip().isin(["", "None"])
