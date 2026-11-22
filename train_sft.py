@@ -7,6 +7,7 @@ import torch
 from datasets import Dataset
 import argparse
 import os
+import wandb
 
 os.environ.setdefault("WANDB_PROJECT", "cs4650-math-finetuning")
 
@@ -16,25 +17,64 @@ LORA_ALPHA = 64
 LORA_R = 64
 TARGET_MODULES = ['q_proj', 'k_proj', 'v_proj', 'o_proj', 'gate_proj', 'up_proj', 'down_proj']
 
+
 class BaselineAndSummarizationTaskCallback(TrainerCallback):
     def __init__(self, tokenizer):
         self.tokenizer = tokenizer
 
     def on_evaluate(self, args, state, control, model, metrics=None, **kwargs):
-        print(f"\n Running Summarization Task at Step {state.global_step} (Epoch {state.epoch})")
-        model.eval()
-        self.evaluate_summarization_task(model, self.tokenizer, state.epoch)
-        model.train()
+        epoch = 0 if state.epoch is None else round(state.epoch)
 
-    def evaluate_summarization_task(self, model, tokenizer, epoch, fine_tuning_strategy="sft_only"):
-        epoch = 0 if epoch is None else round(epoch)
-        result = score_summarization_task(model, tokenizer, epoch, fine_tuning_strategy)
+        print(
+            f"\nRunning Summarization Task at Step "
+            f"{state.global_step} (Epoch {epoch})"
+        )
+
+        model.eval()
+        try:
+            result = self.evaluate_summarization_task(
+                model, self.tokenizer, epoch
+            )
+
+            if wandb.run is not None:
+                wandb.log({
+                    "summarization/rougeL": result["rougeL"],
+                    "summarization/bert_F1": result["bert_F1"],
+                    "summarization/bert_precision": result["bert_precision"],
+                    "summarization/bert_recall": result["bert_recall"],
+                    "epoch": epoch,
+                }, step=state.global_step)
+
+            save_path = (
+                f"/content/drive/MyDrive/math_finetuning/"
+                f"epoch_adapters/epoch_{epoch}"
+            )
+
+            os.makedirs(save_path, exist_ok=True)
+            model.save_pretrained(save_path)
+            self.tokenizer.save_pretrained(save_path)
+
+            print(f"Saved adapter to {save_path}")
+
+        finally:
+            model.train()
+
+        return control
+
+    def evaluate_summarization_task(
+        self, model, tokenizer, epoch,
+        fine_tuning_strategy="sft_only"
+    ):
+        result = score_summarization_task(
+            model, tokenizer, epoch, fine_tuning_strategy
+        )
 
         print(
             f"\n[Summarization | {fine_tuning_strategy} | epoch {epoch}] "
             f"ROUGE-L {result['rougeL']:.4f} | "
             f"BERTScore F1 {result['bert_F1']:.4f} "
-            f"(P {result['bert_precision']:.4f} / R {result['bert_recall']:.4f})"
+            f"(P {result['bert_precision']:.4f} / "
+            f"R {result['bert_recall']:.4f})"
         )
         return result
 
@@ -153,6 +193,8 @@ def main():
     tokenizer, model = get_model()
     train_dataset, eval_dataset = load_and_process_datasets(tokenizer)
     trainer = get_trainer(tokenizer, model, train_dataset, eval_dataset, args.output_dir)
+    trainer.create_model_card = lambda *args, **kwargs: None
+    print("Checkpoint directory:", trainer.args.output_dir)
     trainer.train()
 
 if __name__ == "__main__":
