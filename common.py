@@ -1,3 +1,5 @@
+import os
+import wandb
 from transformers import TrainerCallback
 from summarization_eval import score_summarization_task
 
@@ -17,18 +19,41 @@ def keep_short(df, tokenizer, max_len=1024):
     return df[keep]
 
 class BaselineAndSummarizationTaskCallback(TrainerCallback):
-    def __init__(self, tokenizer, fine_tuning_strategy="sft_only"):
+    def __init__(self, tokenizer, fine_tuning_strategy="sft_only", adapter_dir=None):
         self.tokenizer = tokenizer
         self.fine_tuning_strategy = fine_tuning_strategy
+        # After each eval the adapter is saved to <adapter_dir>/epoch_<N>; None skips saving
+        self.adapter_dir = adapter_dir
 
     def on_evaluate(self, args, state, control, model, metrics=None, **kwargs):
-        print(f"\n Running Summarization Task at Step {state.global_step} (Epoch {state.epoch})")
+        epoch = 0 if state.epoch is None else round(state.epoch)
+        print(f"\nRunning Summarization Task at Step {state.global_step} (Epoch {epoch})")
+
         model.eval()
-        self.evaluate_summarization_task(model, self.tokenizer, state.epoch)
-        model.train()
+        try:
+            result = self.evaluate_summarization_task(model, self.tokenizer, epoch)
+
+            if wandb.run is not None:
+                wandb.log({
+                    "summarization/rougeL": result["rougeL"],
+                    "summarization/bert_F1": result["bert_F1"],
+                    "summarization/bert_precision": result["bert_precision"],
+                    "summarization/bert_recall": result["bert_recall"],
+                    "epoch": epoch,
+                }, step=state.global_step)
+
+            if self.adapter_dir is not None:
+                save_path = os.path.join(self.adapter_dir, f"epoch_{epoch}")
+                os.makedirs(save_path, exist_ok=True)
+                model.save_pretrained(save_path)
+                self.tokenizer.save_pretrained(save_path)
+                print(f"Saved adapter to {save_path}")
+        finally:
+            model.train()
+
+        return control
 
     def evaluate_summarization_task(self, model, tokenizer, epoch):
-        epoch = 0 if epoch is None else round(epoch)
         result = score_summarization_task(model, tokenizer, epoch, self.fine_tuning_strategy)
 
         print(

@@ -149,7 +149,8 @@ def get_trainer(tokenizer, model, train_dataset, eval_dataset, output_dir="./grp
         train_dataset=train_dataset,
         eval_dataset=eval_dataset,
         processing_class=tokenizer,
-        callbacks=[BaselineAndSummarizationTaskCallback(tokenizer, fine_tuning_strategy=strategy)]
+        callbacks=[BaselineAndSummarizationTaskCallback(tokenizer, fine_tuning_strategy=strategy,
+                                                        adapter_dir=os.path.join(output_dir, "epoch_adapters"))]
     )
 
     return trainer
@@ -166,6 +167,8 @@ def main():
     train_dataset, eval_dataset = load_and_process_datasets(tokenizer)
     trainer = get_trainer(tokenizer, model, train_dataset, eval_dataset, args.output_dir, args.strategy,
                           run_name=args.run_name)
+    trainer.create_model_card = lambda *args, **kwargs: None
+    print("Checkpoint directory:", trainer.args.output_dir)
     save_run_info(args)
     trainer.train()
 

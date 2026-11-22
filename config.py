@@ -9,6 +9,8 @@ MODEL_NAME = "Qwen/Qwen2.5-1.5B"
 TRAIN_PATH = "datasets/train.jsonl"
 VAL_PATH = "datasets/val.jsonl"
 
+SFT_EPOCH_ADAPTER_DIR = "/content/drive/MyDrive/math_finetuning/epoch_adapters"
+
 
 def check_filled(config, allowed_none=()):
     missing = [k for k, v in config.model_dump().items() if v is None and k not in allowed_none]
